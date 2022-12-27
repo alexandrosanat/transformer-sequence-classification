@@ -1,0 +1,5 @@
+*.zip
+*.tsv
+/venv
+/.DS_Store
+/.idea/
