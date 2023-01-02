@@ -63,11 +63,15 @@ def clean_imdb_dataset(df):
 
 class SentimentClassificationModel(pl.LightningModule):
     def __init__(
-        self, n_epochs: int = 15, learning_rate: float = 0.01, batch_size: int = 32
+        self, learning_rate: float = 0.01, batch_size: int = 32
     ):
         super().__init__()
 
         self.bert = AutoModel.from_pretrained("bert-base-cased")
+        # Freeze the Bert model
+        for param in self.bert.parameters():
+            param.requires_grad = False
+
         self.dropout = torch.nn.Dropout(0.1)
         self.Bidirectional = torch.nn.LSTM(
             input_size=1, hidden_size=10, num_layers=768, bidirectional=True
@@ -76,6 +80,7 @@ class SentimentClassificationModel(pl.LightningModule):
 
     def forward(self, input_ids, attention_mask, labels):
         outputs = self.bert(input_ids, attention_mask=attention_mask)
+
         embeddings = outputs[0]  # (bs, seq_len, dim)
         X = self.dropout(embeddings)
         X = self.Bidirectional(X)
@@ -91,19 +96,21 @@ class SentimentClassificationModel(pl.LightningModule):
 
         # Loss
         loss_fct = torch.nn.CrossEntropyLoss()
-        loss = loss_fct(y_hat.view(-1, self.num_labels), label.view(-1))
+        num_labels = 5
+        loss = loss_fct(y_hat.view(-1, num_labels), label.view(-1))
 
         return {"loss": loss}
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(lr=0.01, eps=1e-08)
+        # The first arg is required so that the bert layer won't be unfrozen
+        optimizer = torch.optim.Adam([p for p in self.parameters() if p.requires_grad], lr=0.01, eps=1e-08)
         return optimizer
 
-    def train_dataloader(self):
-        return DataLoader(train_dataset, shuffle=True, batch_size=32)
-
-    def val_dataloader(self):
-        return DataLoader(val_dataset, batch_size=32)
+    # def train_dataloader(self):
+    #     return DataLoader(train_dataset, shuffle=True, batch_size=32)
+    #
+    # def val_dataloader(self):
+    #     return DataLoader(val_dataset, batch_size=32)
 
 
 if __name__ == "__main__":
