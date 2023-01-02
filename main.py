@@ -9,7 +9,7 @@ from transformers import BertTokenizer, AutoModel
 from math import floor
 import numpy as np
 from pytorch_lightning import Trainer
-from sklearn.metrics import accuracy_score
+import torchmetrics
 
 
 class ImdbDataset(Dataset):
@@ -49,14 +49,11 @@ class ImdbDataset(Dataset):
 def clean_imdb_dataset(df):
 
     df = df.drop_duplicates(subset="SentenceId", keep="first", ignore_index=True)
-
-    # Prepare labels
-    sentiment_arr = df["Sentiment"].values
-    labels = np.zeros((sentiment_arr.size, sentiment_arr.max() + 1), dtype=int)
+    # sentiment_arr = df["Sentiment"].values
+    # labels = np.zeros((sentiment_arr.size, sentiment_arr.max() + 1), dtype=int)
     # replacing 0 with a 1 at the index of the original array
-    labels[np.arange(sentiment_arr.size), sentiment_arr] = 1
-
-    # Prepare texts
+    # labels[np.arange(sentiment_arr.size), sentiment_arr] = 1
+    labels = df["Sentiment"].tolist()
     texts = df["Phrase"].tolist()
 
     return texts, labels
@@ -79,8 +76,12 @@ class SentimentClassificationModel(pl.LightningModule):
             bidirectional=False,
             batch_first=True,
         )
-        self.classifier = torch.nn.Linear(1, 5)
+
+        hidden_size = 1
+        self.classifier = torch.nn.Linear(hidden_size, 5)
         self.softmax = torch.nn.LogSoftmax(dim=1)
+
+        self.accuracy = torchmetrics.Accuracy(task='multiclass', num_classes=5)
 
     def forward(self, input_ids, attention_mask, labels):
         outputs = self.bert(input_ids, attention_mask=attention_mask)
@@ -88,7 +89,12 @@ class SentimentClassificationModel(pl.LightningModule):
         embeddings = outputs[0]  # (bs, seq_len, dim)
         X = self.dropout(embeddings)
         output, (hidden, cell) = self.Bidirectional(X)
-        out = self.classifier(output)
+
+        # dim = output.shape[0]
+        # print("This is the dimension:", dim)
+        # qq = output.reshape(dim, -1)
+
+        out = self.classifier(hidden[-1])
         # out = self.softmax(out)
         return out
 
@@ -105,7 +111,14 @@ class SentimentClassificationModel(pl.LightningModule):
         num_labels = 5
         loss = loss_fct(y_hat, label)
 
+        accuracy_epoch = self.accuracy(y_hat, label)
+        self.log('train_acc_step', accuracy_epoch)
+
         return {"loss": loss}
+
+    # def training_epoch_end(self, outputs):
+    #     accuracy_epoch = self.accuracy(outputs.y_hat, outputs.label)
+    #     print(accuracy_epoch)
 
     def configure_optimizers(self):
         # The first arg is required so that the bert layer won't be unfrozen
