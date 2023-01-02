@@ -9,6 +9,7 @@ from transformers import BertTokenizer, AutoModel
 from math import floor
 import numpy as np
 from pytorch_lightning import Trainer
+from sklearn.metrics import accuracy_score
 
 
 class ImdbDataset(Dataset):
@@ -62,9 +63,7 @@ def clean_imdb_dataset(df):
 
 
 class SentimentClassificationModel(pl.LightningModule):
-    def __init__(
-        self, learning_rate: float = 0.01, batch_size: int = 32
-    ):
+    def __init__(self, learning_rate: float = 0.01, batch_size: int = 32):
         super().__init__()
 
         self.bert = AutoModel.from_pretrained("bert-base-cased")
@@ -74,17 +73,24 @@ class SentimentClassificationModel(pl.LightningModule):
 
         self.dropout = torch.nn.Dropout(0.1)
         self.Bidirectional = torch.nn.LSTM(
-            input_size=1, hidden_size=10, num_layers=768, bidirectional=True
+            input_size=768,
+            hidden_size=1,
+            num_layers=1,
+            bidirectional=False,
+            batch_first=True,
         )
-        self.classifier = torch.nn.Linear(5, 5)
+        self.classifier = torch.nn.Linear(1, 5)
+        self.softmax = torch.nn.LogSoftmax(dim=1)
 
     def forward(self, input_ids, attention_mask, labels):
         outputs = self.bert(input_ids, attention_mask=attention_mask)
 
         embeddings = outputs[0]  # (bs, seq_len, dim)
         X = self.dropout(embeddings)
-        X = self.Bidirectional(X)
-        return self.classifier(X)
+        output, (hidden, cell) = self.Bidirectional(X)
+        out = self.classifier(output)
+        # out = self.softmax(out)
+        return out
 
     def training_step(self, batch, batch_nb):
 
@@ -97,13 +103,15 @@ class SentimentClassificationModel(pl.LightningModule):
         # Loss
         loss_fct = torch.nn.CrossEntropyLoss()
         num_labels = 5
-        loss = loss_fct(y_hat.view(-1, num_labels), label.view(-1))
+        loss = loss_fct(y_hat, label)
 
         return {"loss": loss}
 
     def configure_optimizers(self):
         # The first arg is required so that the bert layer won't be unfrozen
-        optimizer = torch.optim.Adam([p for p in self.parameters() if p.requires_grad], lr=0.01, eps=1e-08)
+        optimizer = torch.optim.Adam(
+            [p for p in self.parameters() if p.requires_grad], lr=0.01, eps=1e-08
+        )
         return optimizer
 
     # def train_dataloader(self):
