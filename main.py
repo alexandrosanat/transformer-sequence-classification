@@ -11,6 +11,8 @@ import numpy as np
 from pytorch_lightning import Trainer
 import torchmetrics
 
+torch.manual_seed(0)
+
 
 class ImdbDataset(Dataset):
     def __init__(self, texts, targets, tokenizer, max_len):
@@ -71,9 +73,10 @@ class SentimentClassificationModel(pl.LightningModule):
         )
 
         hidden_size = 1
-        self.classifier = torch.nn.Linear(hidden_size, 5)
+        no_classes = 5
+        self.classifier = torch.nn.Linear(hidden_size, no_classes)
         self.softmax = torch.nn.LogSoftmax(dim=1)
-        self.accuracy = torchmetrics.Accuracy(task='multiclass', num_classes=5)
+        self.accuracy = torchmetrics.Accuracy(task="multiclass", num_classes=no_classes)
         self.loss_fct = torch.nn.CrossEntropyLoss()
 
     def forward(self, input_ids, attention_mask, labels):
@@ -87,17 +90,14 @@ class SentimentClassificationModel(pl.LightningModule):
         return out
 
     def training_step(self, batch, batch_idx):
-
         input_ids = batch["input_ids"]
         label = batch["label"]
         attention_mask = batch["attention_mask"]
-        # Forward
-        y_hat = self(input_ids, attention_mask, label)
+        y_hat = self(input_ids, attention_mask, label)  # Forward
         loss = self.loss_fct(y_hat, label)
-
-        accuracy_epoch = self.accuracy(y_hat, label)
-        self.log('train_acc_step', accuracy_epoch)
-        self.log("loss", loss)
+        train_accuracy = self.accuracy(y_hat, label)
+        self.log("train_loss", loss, on_epoch=True, prog_bar=True)
+        self.log("train_acc_step", train_accuracy, on_epoch=True, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -106,7 +106,9 @@ class SentimentClassificationModel(pl.LightningModule):
         attention_mask = batch["attention_mask"]
         y_hat = self(input_ids, attention_mask, label)
         loss = self.loss_fct(y_hat, label)
-        self.log(value=loss, name="val_loss", on_epoch=True)
+        val_accuracy = self.accuracy(y_hat, label)
+        self.log("val_loss", loss, on_epoch=True, prog_bar=True)
+        self.log("val_acc_step", val_accuracy, on_epoch=True, prog_bar=True)
 
     def configure_optimizers(self):
         # The first arg is required so that the bert layer won't be unfrozen
@@ -130,8 +132,6 @@ if __name__ == "__main__":
 
     # Convert to Pytorch dataset
     dataset = ImdbDataset(texts, labels, tokenizer, SENTENCE_LEN)
-    print(dataset.__getitem__(1))
-    print(dataset.__len__())
 
     BATCH_SIZE = 32
     DATASET_LEN = dataset.__len__()
