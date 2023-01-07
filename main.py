@@ -73,8 +73,8 @@ class SentimentClassificationModel(pl.LightningModule):
         hidden_size = 1
         self.classifier = torch.nn.Linear(hidden_size, 5)
         self.softmax = torch.nn.LogSoftmax(dim=1)
-
         self.accuracy = torchmetrics.Accuracy(task='multiclass', num_classes=5)
+        self.loss_fct = torch.nn.CrossEntropyLoss()
 
     def forward(self, input_ids, attention_mask, labels):
         outputs = self.bert(input_ids, attention_mask=attention_mask)
@@ -86,27 +86,27 @@ class SentimentClassificationModel(pl.LightningModule):
         # out = self.softmax(out)
         return out
 
-    def training_step(self, batch, batch_nb):
+    def training_step(self, batch, batch_idx):
 
         input_ids = batch["input_ids"]
         label = batch["label"]
         attention_mask = batch["attention_mask"]
         # Forward
         y_hat = self(input_ids, attention_mask, label)
-
-        # Loss
-        loss_fct = torch.nn.CrossEntropyLoss()
-        num_labels = 5
-        loss = loss_fct(y_hat, label)
+        loss = self.loss_fct(y_hat, label)
 
         accuracy_epoch = self.accuracy(y_hat, label)
         self.log('train_acc_step', accuracy_epoch)
+        self.log("loss", loss)
+        return loss
 
-        return {"loss": loss}
-
-    # def training_epoch_end(self, outputs):
-    #     accuracy_epoch = self.accuracy(outputs.y_hat, outputs.label)
-    #     print(accuracy_epoch)
+    def validation_step(self, batch, batch_idx):
+        input_ids = batch["input_ids"]
+        label = batch["label"]
+        attention_mask = batch["attention_mask"]
+        y_hat = self(input_ids, attention_mask, label)
+        loss = self.loss_fct(y_hat, label)
+        self.log(value=loss, name="val_loss", on_epoch=True)
 
     def configure_optimizers(self):
         # The first arg is required so that the bert layer won't be unfrozen
@@ -141,12 +141,10 @@ if __name__ == "__main__":
     VAL_LEN = DATASET_LEN - TRAIN_LEN
 
     train_set, val_set = torch.utils.data.random_split(dataset, [TRAIN_LEN, VAL_LEN])
-    train_dataloader = DataLoader(train_set, batch_size=32, shuffle=True)
-    val_dataloader = DataLoader(val_set, batch_size=32, shuffle=True)
+    train_dataloader = DataLoader(train_set, batch_size=32, shuffle=True, num_workers=8)
+    val_dataloader = DataLoader(val_set, batch_size=32, shuffle=False, num_workers=8)
 
-    next(iter(train_dataloader))["attention_mask"].shape
-
-    trainer = Trainer(max_epochs=N_EPOCHS)
+    trainer = Trainer(max_epochs=N_EPOCHS, fast_dev_run=True, log_every_n_steps=1)
     model = SentimentClassificationModel()
 
-    trainer.fit(model, train_dataloader)
+    trainer.fit(model, train_dataloader, val_dataloader)
