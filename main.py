@@ -47,16 +47,9 @@ class ImdbDataset(Dataset):
 
 
 def clean_imdb_dataset(df):
-
+    """Drops duplicate rows and returns just the text sequences and the labels."""
     df = df.drop_duplicates(subset="SentenceId", keep="first", ignore_index=True)
-    # sentiment_arr = df["Sentiment"].values
-    # labels = np.zeros((sentiment_arr.size, sentiment_arr.max() + 1), dtype=int)
-    # replacing 0 with a 1 at the index of the original array
-    # labels[np.arange(sentiment_arr.size), sentiment_arr] = 1
-    labels = df["Sentiment"].tolist()
-    texts = df["Phrase"].tolist()
-
-    return texts, labels
+    return df["Phrase"].tolist(), df["Sentiment"].tolist()
 
 
 class SentimentClassificationModel(pl.LightningModule):
@@ -89,11 +82,6 @@ class SentimentClassificationModel(pl.LightningModule):
         embeddings = outputs[0]  # (bs, seq_len, dim)
         X = self.dropout(embeddings)
         output, (hidden, cell) = self.Bidirectional(X)
-
-        # dim = output.shape[0]
-        # print("This is the dimension:", dim)
-        # qq = output.reshape(dim, -1)
-
         out = self.classifier(hidden[-1])
         # out = self.softmax(out)
         return out
@@ -126,12 +114,6 @@ class SentimentClassificationModel(pl.LightningModule):
             [p for p in self.parameters() if p.requires_grad], lr=0.01, eps=1e-08
         )
         return optimizer
-
-    # def train_dataloader(self):
-    #     return DataLoader(train_dataset, shuffle=True, batch_size=32)
-    #
-    # def val_dataloader(self):
-    #     return DataLoader(val_dataset, batch_size=32)
 
 
 if __name__ == "__main__":
